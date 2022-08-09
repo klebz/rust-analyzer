@@ -11,8 +11,17 @@ use std::{ffi::OsString, fmt, iter, path::PathBuf};
 
 use flycheck::FlycheckConfig;
 use ide::{
-    AssistConfig, CallableSnippets, CompletionConfig, DiagnosticsConfig, ExprFillDefaultMode,
-    HighlightRelatedConfig, HoverConfig, HoverDocFormat, InlayHintsConfig, JoinLinesConfig,
+    AssistConfig, 
+    CallableSnippets, 
+    CompletionConfig, 
+    DiagnosticsConfig, 
+    ExprFillDefaultMode,
+    HighlightRelatedConfig, 
+    HoverConfig, 
+    HoverDocFormat, 
+    InlayHintsConfig, 
+    JoinLinesConfig,
+    KlebsFixBabyRustConfig,
     Snippet, SnippetScope,
 };
 use ide_db::{
@@ -1128,6 +1137,12 @@ impl Config {
             remove_trailing_comma: self.data.joinLines_removeTrailingComma,
             unwrap_trivial_blocks: self.data.joinLines_unwrapTrivialBlock,
             join_assignments: self.data.joinLines_joinAssignments,
+        }
+    }
+
+    pub fn klebs_fix_baby_rust(&self) -> KlebsFixBabyRustConfig {
+        KlebsFixBabyRustConfig {
+
         }
     }
 

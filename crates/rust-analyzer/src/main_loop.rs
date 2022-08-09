@@ -27,6 +27,7 @@ use crate::{
     Result,
 };
 
+
 pub fn main_loop(config: Config, connection: Connection) -> Result<()> {
     tracing::info!("initial config: {:#?}", config);
 
@@ -609,6 +610,7 @@ impl GlobalState {
             .on_sync_mut::<lsp_ext::MemoryUsage>(handlers::handle_memory_usage)
             .on_sync_mut::<lsp_ext::ShuffleCrateGraph>(handlers::handle_shuffle_crate_graph)
             .on_sync::<lsp_ext::JoinLines>(handlers::handle_join_lines)
+            .on_sync::<lsp_ext::KlebsFixBabyRust>(handlers::handle_klebs_fix_baby_rust)
             .on_sync::<lsp_ext::OnEnter>(handlers::handle_on_enter)
             .on_sync::<lsp_types::request::SelectionRangeRequest>(handlers::handle_selection_range)
             .on_sync::<lsp_ext::MatchingBrace>(handlers::handle_matching_brace)

@@ -8,7 +8,8 @@ use vfs::FileId;
 
 use crate::{CrateGraph, SourceDatabaseExt, SourceRoot, SourceRootId};
 
-/// Encapsulate a bunch of raw `.set` calls on the database.
+/// Encapsulate a bunch of raw `.set` calls on the
+/// database.
 #[derive(Default)]
 pub struct Change {
     pub roots: Option<Vec<SourceRoot>>,

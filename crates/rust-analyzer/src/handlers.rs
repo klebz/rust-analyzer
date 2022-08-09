@@ -259,6 +259,35 @@ pub(crate) fn handle_join_lines(
     Ok(to_proto::text_edit_vec(&line_index, res))
 }
 
+pub(crate) fn handle_klebs_fix_baby_rust(
+    snap: GlobalStateSnapshot,
+    params: lsp_ext::KlebsFixBabyRustParams,
+) -> Result<Vec<lsp_types::TextEdit>> {
+
+    let _p = profile::span("handle_klebs_fix_baby_rust");
+
+    let config     = snap.config.klebs_fix_baby_rust();
+    let file_id    = from_proto::file_id(&snap, &params.text_document.uri)?;
+    let line_index = snap.file_line_index(file_id)?;
+
+    let mut res = TextEdit::default();
+
+    for range in params.ranges {
+
+        let range = from_proto::text_range(&line_index, range)?;
+        let edit  = snap.analysis.klebs_fix_baby_rust(&config, FileRange { file_id, range })?;
+
+        match res.union(edit) {
+            Ok(()) => (),
+            Err(_edit) => {
+                // just ignore overlapping edits
+            }
+        }
+    }
+
+    Ok(to_proto::text_edit_vec(&line_index, res))
+}
+
 pub(crate) fn handle_on_enter(
     snap: GlobalStateSnapshot,
     params: lsp_types::TextDocumentPositionParams,

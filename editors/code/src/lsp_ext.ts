@@ -97,6 +97,16 @@ export const joinLines = new lc.RequestType<JoinLinesParams, lc.TextEdit[], void
     "experimental/joinLines"
 );
 
+//------------------------------
+export interface KlebsFixBabyRustParams {
+    textDocument: lc.TextDocumentIdentifier;
+    ranges: lc.Range[];
+}
+export const klebsFixBabyRust = new lc.RequestType<KlebsFixBabyRustParams, lc.TextEdit[], void>(
+    "experimental/klebsFixBabyRust"
+);
+
+//------------------------------
 export const onEnter = new lc.RequestType<lc.TextDocumentPositionParams, lc.TextEdit[], void>(
     "experimental/onEnter"
 );

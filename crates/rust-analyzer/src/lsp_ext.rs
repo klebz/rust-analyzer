@@ -9,6 +9,23 @@ use lsp_types::{
 };
 use serde::{Deserialize, Serialize};
 
+pub enum KlebsFixBabyRust {}
+
+impl Request for KlebsFixBabyRust {
+    type Params = KlebsFixBabyRustParams;
+    type Result = Vec<lsp_types::TextEdit>;
+    const METHOD: &'static str = "experimental/klebsFixBabyRust";
+}
+
+
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct KlebsFixBabyRustParams {
+    pub text_document: TextDocumentIdentifier,
+    pub ranges:        Vec<Range>,
+}
+
+//-----------------------------------------
 pub enum AnalyzerStatus {}
 
 impl Request for AnalyzerStatus {

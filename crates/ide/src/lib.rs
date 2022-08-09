@@ -40,6 +40,7 @@ mod goto_type_definition;
 mod hover;
 mod inlay_hints;
 mod join_lines;
+mod klebs_fix_baby_rust;
 mod markdown_remove;
 mod matching_brace;
 mod moniker;
@@ -86,6 +87,7 @@ pub use crate::{
         LifetimeElisionHints, ReborrowHints,
     },
     join_lines::JoinLinesConfig,
+    klebs_fix_baby_rust::KlebsFixBabyRustConfig,
     markup::Markup,
     moniker::{MonikerKind, MonikerResult, PackageInformation},
     move_item::Direction,
@@ -326,6 +328,15 @@ impl Analysis {
         self.with_db(|db| {
             let parse = db.parse(frange.file_id);
             join_lines::join_lines(config, &parse.tree(), frange.range)
+        })
+    }
+
+    pub fn klebs_fix_baby_rust(&self, config: &KlebsFixBabyRustConfig, frange: FileRange) -> Cancellable<TextEdit> {
+        self.with_db(|db| {
+
+            let parse = db.parse(frange.file_id);
+
+            klebs_fix_baby_rust::klebs_fix_baby_rust(config, &parse.tree(), frange.range)
         })
     }
 
