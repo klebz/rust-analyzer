@@ -222,6 +222,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "chomper-plugin"
+version = "0.1.0"
+dependencies = [
+ "libloading",
+ "syntax",
+ "text-edit",
+]
+
+[[package]]
 name = "countme"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -608,6 +617,7 @@ name = "ide"
 version = "0.0.0"
 dependencies = [
  "cfg",
+ "chomper-plugin",
  "cov-mark",
  "crossbeam-channel",
  "dot",
@@ -1368,6 +1378,7 @@ dependencies = [
  "always-assert",
  "anyhow",
  "cfg",
+ "chomper-plugin",
  "crossbeam-channel",
  "dissimilar",
  "expect-test",

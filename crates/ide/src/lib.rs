@@ -40,7 +40,6 @@ mod goto_type_definition;
 mod hover;
 mod inlay_hints;
 mod join_lines;
-mod klebs_fix_baby_rust;
 mod markdown_remove;
 mod matching_brace;
 mod moniker;
@@ -60,9 +59,11 @@ mod view_hir;
 mod view_item_tree;
 mod shuffle_crate_graph;
 
-use std::sync::Arc;
+use std::sync::{Arc,Mutex};
 
 use cfg::CfgOptions;
+use chomper_plugin::*;
+
 use ide_db::{
     base_db::{
         salsa::{self, ParallelDatabase},
@@ -70,6 +71,7 @@ use ide_db::{
     },
     symbol_index, LineIndexDatabase,
 };
+
 use syntax::SourceFile;
 
 use crate::navigation_target::{ToNav, TryToNav};
@@ -87,7 +89,6 @@ pub use crate::{
         LifetimeElisionHints, ReborrowHints,
     },
     join_lines::JoinLinesConfig,
-    klebs_fix_baby_rust::KlebsFixBabyRustConfig,
     markup::Markup,
     moniker::{MonikerKind, MonikerResult, PackageInformation},
     move_item::Direction,
@@ -143,13 +144,15 @@ impl<T> RangeInfo<T> {
     }
 }
 
-/// `AnalysisHost` stores the current state of the world.
+/// `AnalysisHost` stores the current state of the
+/// world.
 #[derive(Debug)]
 pub struct AnalysisHost {
     db: RootDatabase,
 }
 
 impl AnalysisHost {
+
     pub fn new(lru_capacity: Option<usize>) -> AnalysisHost {
         AnalysisHost { db: RootDatabase::new(lru_capacity) }
     }
@@ -161,7 +164,18 @@ impl AnalysisHost {
     /// Returns a snapshot of the current state, which you can query for
     /// semantic information.
     pub fn analysis(&self) -> Analysis {
-        Analysis { db: self.db.snapshot() }
+
+        let mut result = Analysis {
+            db:                  self.db.snapshot(), 
+            klebs_fix_baby_rust: Arc::new(Mutex::new(None)) 
+        };
+
+        if let Ok(plugin_path) = std::env::var("KLEBS_FIX_BABY_RUST_PLUGIN_PATH") {
+
+            result.load_klebs_fix_baby_rust_plugin(&plugin_path);
+        }
+
+        result
     }
 
     /// Applies changes to the current state of the world. If there are
@@ -190,44 +204,79 @@ impl AnalysisHost {
 }
 
 impl Default for AnalysisHost {
+
     fn default() -> AnalysisHost {
         AnalysisHost::new(None)
     }
 }
 
-/// Analysis is a snapshot of a world state at a moment in time. It is the main
-/// entry point for asking semantic information about the world. When the world
-/// state is advanced using `AnalysisHost::apply_change` method, all existing
-/// `Analysis` are canceled (most method return `Err(Canceled)`).
+/// Analysis is a snapshot of a world state at
+/// a moment in time. It is the main entry point
+/// for asking semantic information about the
+/// world. When the world state is advanced using
+/// `AnalysisHost::apply_change` method, all
+/// existing `Analysis` are canceled (most method
+/// return `Err(Canceled)`).
 #[derive(Debug)]
 pub struct Analysis {
-    db: salsa::Snapshot<RootDatabase>,
+    db:                  salsa::Snapshot<RootDatabase>,
+    klebs_fix_baby_rust: Arc<Mutex<Option<Box<dyn KlebsFixBabyRustPlugin>>>>,
 }
 
-// As a general design guideline, `Analysis` API are intended to be independent
-// from the language server protocol. That is, when exposing some functionality
-// we should think in terms of "what API makes most sense" and not in terms of
-// "what types LSP uses". Although currently LSP is the only consumer of the
-// API, the API should in theory be usable as a library, or via a different
-// protocol.
+impl LoadKlebsFixBabyRustDynamicPlugin for Analysis {
+
+    fn load_klebs_fix_baby_rust_plugin(&self, path: &str) {
+
+        let (_lib, plugin) 
+        = dynamically_load_klebs_fix_baby_rust_plugin(path);
+
+        if let Ok(mut guard) = self.klebs_fix_baby_rust.lock() {
+            *guard = Some(plugin);
+        }
+    }
+}
+
+// As a general design guideline, `Analysis` API
+// are intended to be independent from the
+// language server protocol. That is, when
+// exposing some functionality we should think in
+// terms of "what API makes most sense" and not in
+// terms of "what types LSP uses". Although
+// currently LSP is the only consumer of the API,
+// the API should in theory be usable as
+// a library, or via a different protocol.
 impl Analysis {
-    // Creates an analysis instance for a single file, without any external
-    // dependencies, stdlib support or ability to apply changes. See
-    // `AnalysisHost` for creating a fully-featured analysis.
+
+    // Creates an analysis instance for a single
+    // file, without any external dependencies,
+    // stdlib support or ability to apply
+    // changes. See `AnalysisHost` for creating
+    // a fully-featured analysis.
     pub fn from_single_file(text: String) -> (Analysis, FileId) {
-        let mut host = AnalysisHost::default();
-        let file_id = FileId(0);
+
+        let mut host     = AnalysisHost::default();
+        let file_id      = FileId(0);
         let mut file_set = FileSet::default();
-        file_set.insert(file_id, VfsPath::new_virtual_path("/main.rs".to_string()));
+
+        file_set.insert(
+            file_id, 
+            VfsPath::new_virtual_path("/main.rs".to_string())
+        );
+
         let source_root = SourceRoot::new_local(file_set);
 
         let mut change = Change::new();
+
         change.set_roots(vec![source_root]);
+
         let mut crate_graph = CrateGraph::default();
+
         // FIXME: cfg options
         // Default to enable test for single file.
         let mut cfg_options = CfgOptions::default();
+
         cfg_options.insert_atom("test".into());
+
         crate_graph.add_crate_root(
             file_id,
             Edition::CURRENT,
@@ -240,9 +289,13 @@ impl Analysis {
             false,
             CrateOrigin::CratesIo { repo: None },
         );
+
         change.change_file(file_id, Some(Arc::new(text)));
+
         change.set_crate_graph(crate_graph);
+
         host.apply_change(change);
+
         (host.analysis(), file_id)
     }
 
@@ -331,12 +384,37 @@ impl Analysis {
         })
     }
 
-    pub fn klebs_fix_baby_rust(&self, config: &KlebsFixBabyRustConfig, frange: FileRange) -> Cancellable<TextEdit> {
+    pub fn klebs_fix_baby_rust(&self, 
+        config: &KlebsFixBabyRustConfig, 
+        frange: FileRange) -> Cancellable<TextEdit> {
+
+        if let Ok(plugin_path) = std::env::var("KLEBS_FIX_BABY_RUST_PLUGIN_PATH") {
+            self.load_klebs_fix_baby_rust_plugin(plugin_path.as_str());
+        }
+
         self.with_db(|db| {
 
-            let parse = db.parse(frange.file_id);
+            if let Ok(mut guard) = self.klebs_fix_baby_rust.lock() {
 
-            klebs_fix_baby_rust::klebs_fix_baby_rust(config, &parse.tree(), frange.range)
+                if let Some(plugin) = guard.as_mut() {
+
+                    let parse = db.parse(frange.file_id);
+
+                    plugin.klebs_fix_baby_rust(
+                        config, 
+                        &parse.tree(), 
+                        frange.range
+                    )
+
+                } else {
+
+                    TextEdit::builder().finish()
+                }
+
+            } else {
+                panic!("could not get mutex");
+            }
+
         })
     }
 

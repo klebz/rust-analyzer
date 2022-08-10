@@ -21,9 +21,11 @@ use ide::{
     HoverDocFormat, 
     InlayHintsConfig, 
     JoinLinesConfig,
-    KlebsFixBabyRustConfig,
     Snippet, SnippetScope,
 };
+
+use chomper_plugin::*;
+
 use ide_db::{
     imports::insert_use::{ImportGranularity, InsertUseConfig, PrefixKind},
     SnippetCap,
