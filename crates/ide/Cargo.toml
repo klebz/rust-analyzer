@@ -10,7 +10,10 @@ rust-version = "1.57"
 doctest = false
 
 [dependencies]
-chomper-plugin = { path = "../../../chomper-plugin", version = "*" }
+libloading     = "*"
+derivative     = "*"
+hotlib         = { git  = "https://github.com/klebz/hotlib", version = "*" }
+chomper-plugin = { path = "../../../chomper-plugin",         version = "*" }
 
 cov-mark = "2.0.0-pre.1"
 crossbeam-channel = "0.5.5"

@@ -60,6 +60,9 @@ mod view_item_tree;
 mod shuffle_crate_graph;
 
 use std::sync::{Arc,Mutex};
+use std::path::PathBuf;
+
+use derivative::*;
 
 use cfg::CfgOptions;
 use chomper_plugin::*;
@@ -164,14 +167,11 @@ impl AnalysisHost {
     /// Returns a snapshot of the current state,
     /// which you can query for semantic
     /// information.
-    #[tracing::instrument]
     pub fn analysis(&self) -> Analysis {
 
-        tracing::debug!("creating Analysis");
-
         Analysis {
-            db:                  self.db.snapshot(), 
-            klebs_fix_baby_rust: Arc::new(Mutex::new(None)) 
+            db:    self.db.snapshot(), 
+            klebs: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -214,30 +214,158 @@ impl Default for AnalysisHost {
 /// `AnalysisHost::apply_change` method, all
 /// existing `Analysis` are canceled (most method
 /// return `Err(Canceled)`).
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Analysis {
-    db:                  salsa::Snapshot<RootDatabase>,
-    klebs_fix_baby_rust: Arc<Mutex<Option<Box<dyn KlebsFixBabyRustPlugin>>>>,
+    db:    salsa::Snapshot<RootDatabase>,
+
+    #[derivative(Debug="ignore")]
+    klebs: Arc<Mutex<Option<KlebsPluginInterface>>>,
 }
 
-impl LoadKlebsFixBabyRustDynamicPlugin for Analysis {
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct KlebsPluginInterface {
 
-    fn load_klebs_fix_baby_rust_plugin(&self, path: &str) {
+    #[derivative(Debug="ignore")]
+    watch:      hotlib::Watch,
 
-        match dynamically_load_klebs_fix_baby_rust_plugin(path) {
-            Ok((_lib, plugin)) => {
+    #[derivative(Debug="ignore")]
+    lib:        Arc<Mutex<hotlib::TempLibrary>>,
 
-                if let Ok(mut guard) = self.klebs_fix_baby_rust.lock() {
+    #[derivative(Debug="ignore")]
+    pub plugin: Arc<Mutex<Box<dyn KlebsFixBabyRustPlugin>>>,
+    //klebs_fix_baby_rust: Arc<Mutex<Option<(libloading::Library, Box<dyn KlebsFixBabyRustPlugin>)>>>,
+}
 
-                    *guard = Some(plugin);
+#[derive(Debug)]
+pub enum CreatePluginError {
+    EnvNotSet,
+    NoEntryPoint {
+        error: libloading::Error,
+    },
+    HotlibWatchFailedOnPath {
+        path:  PathBuf,
+        error: hotlib::WatchError,
+    },
+    CannotLoadLibrary {
+        error: hotlib::LoadError,
+    },
+}
 
-                    tracing::debug!("set dynamic library!");
-                }
+impl KlebsPluginInterface {
+
+    pub fn new_from_env() -> Result<Self, CreatePluginError> {
+
+        match Self::try_get_plugin_path() {
+            Some(path) => {
+                Self::new_from_path(path)
             },
-            Err(e) => {
-
-                tracing::error!("error setting dynamic library! {}", e);
+            None => {
+                Err(CreatePluginError::EnvNotSet)
             }
+        }
+    }
+
+    /// The given `Path` should point to the
+    /// `Cargo.toml` of the package used to build
+    /// the library.
+    #[tracing::instrument]
+    pub fn new_from_path(p: PathBuf) -> Result<Self, CreatePluginError> {
+
+        let watch = hotlib::watch(p.as_path()).map_err(|e| {
+            CreatePluginError::HotlibWatchFailedOnPath {
+                path:  p.to_path_buf(),
+                error: e,
+            }
+        })?;
+
+        let lib    = Self::build_library_and_load(&watch)?;
+        let plugin = Self::create_plugin_from_library_entrypoint(&lib)?;
+
+        Ok(
+            Self {
+                watch,
+                lib:    Arc::new(Mutex::new(lib)),
+                plugin: Arc::new(Mutex::new(plugin)),
+            }
+        )
+    }
+
+    #[tracing::instrument]
+    pub fn maybe_reload_plugin(&mut self) {
+        match self.reload_plugin() {
+            Ok(_) => {},
+            Err(e) => {
+                tracing::error!("reload plugin failure! error: {:?}", e);
+            }
+        }
+    }
+}
+
+//--------------------------------[ keep private ]
+impl KlebsPluginInterface {
+
+    #[tracing::instrument]
+    fn reload_plugin(&mut self) -> Result<(), CreatePluginError> {
+
+        let lib    = Self::build_library_and_load(&self.watch)?;
+        let plugin = Self::create_plugin_from_library_entrypoint(&lib)?;
+
+        if let Ok(guard) = self.lib.lock() {
+            *guard = lib;
+        }
+
+        if let Ok(guard) = self.plugin.lock() {
+            *guard = plugin;
+        }
+
+        Ok(())
+    }
+
+    fn build_library_and_load(watch: &hotlib::Watch) -> Result<hotlib::TempLibrary,CreatePluginError> {
+
+        watch.package().build().and_then(|pkg| pkg.load()?).map_err(|e| {
+            CreatePluginError::CannotLoadLibrary {
+                error: e,
+            }
+        })
+    }
+
+    fn get_entrypoint<'a>(lib: &'a hotlib::TempLibrary) -> Result<libloading::Symbol<'a, CreateKlebsFixBabyRustPlugin>, CreatePluginError> {
+
+        let name = Self::default_entrypoint_symbol_name();
+
+        unsafe {
+            lib.lib().get(name).map_err(|e| {
+                CreatePluginError::NoEntryPoint { error: e }
+            })
+        }
+    }
+
+    fn create_plugin_from_library_entrypoint(lib: &hotlib::TempLibrary) -> Result<Box<dyn KlebsFixBabyRustPlugin>,CreatePluginError> {
+
+        Self::get_entrypoint(lib).and_then(|entrypoint| {
+
+            let plugin = unsafe { Box::from_raw(entrypoint()) };
+
+            Ok(plugin)
+        })
+    }
+
+    //---------------------------------------
+    fn default_entrypoint_symbol_name() -> &'static [u8] {
+        b"create_klebs_fix_baby_rust_plugin"
+    }
+
+    fn default_plugin_path_env_var() -> &'static str {
+        "KLEBS_PLUGIN_PATH_TO_CARGO_TOML"
+    }
+
+    fn try_get_plugin_path() -> Option<PathBuf> {
+        match std::env::var(Self::default_plugin_path_env_var()) {
+            Some(p) => PathBuf::from(p),
+            Err(e)  => None,
         }
     }
 }
@@ -394,36 +522,50 @@ impl Analysis {
         config: &KlebsFixBabyRustConfig, 
         frange: FileRange) -> Cancellable<TextEdit> {
 
-        if let Ok(plugin_path) = std::env::var("KLEBS_FIX_BABY_RUST_PLUGIN_PATH") {
-            self.load_klebs_fix_baby_rust_plugin(plugin_path.as_str());
+        if let Some(klebs) = self.klebs {
+
+            klebs.maybe_reload_plugin();
+
         } else {
-            tracing::debug!("klebs plugin path not set!");
+
+            // if we don't have a plugin, try to
+            // load it
+            *self.klebs.lock() = KlebsPluginInterface::new_from_env().ok()
         }
 
-        self.with_db(|db| {
+        // if we still don't have a plugin, we got
+        // an error.  otherwise, use the plugin
+        if let Ok(klebs) = self.klebs.lock() {
 
-            if let Ok(mut guard) = self.klebs_fix_baby_rust.lock() {
+            if let Some(guard) = klebs {
 
-                if let Some(plugin) = guard.as_mut() {
+                self.with_db(|db| {
 
-                    let parse = db.parse(frange.file_id);
+                    if let Ok(plugin) = guard.plugin.lock() {
 
-                    plugin.klebs_fix_baby_rust(
-                        config, 
-                        &parse.tree(), 
-                        frange.range
-                    )
+                        let parse = db.parse(frange.file_id);
 
-                } else {
+                        plugin.klebs_fix_baby_rust(
+                            config,
+                            &parse.tree(),
+                            frange.range
+                        )
 
-                    TextEdit::builder().finish()
-                }
+                    } else {
 
-            } else {
-                panic!("could not get mutex");
+                        Cancelled::catch(|| -> TextEdit {
+                            TextEdit::builder().finish()
+                        })
+                    }
+                })
             }
 
-        })
+        } else {
+
+            Cancelled::catch(|| -> TextEdit {
+                TextEdit::builder().finish()
+            })
+        }
     }
 
     /// Returns an edit which should be applied when opening a new line, fixing
@@ -709,8 +851,8 @@ impl Analysis {
         })
     }
 
-    /// Returns the edit required to rename reference at the position to the new
-    /// name.
+    /// Returns the edit required to rename
+    /// reference at the position to the new name.
     pub fn rename(
         &self,
         position: FilePosition,
