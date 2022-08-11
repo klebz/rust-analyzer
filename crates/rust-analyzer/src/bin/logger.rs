@@ -75,6 +75,7 @@ impl Logger {
             Some(file) => BoxMakeWriter::new(Arc::new(file)),
             None => BoxMakeWriter::new(io::stderr),
         };
+
         let ra_fmt_layer =
             tracing_subscriber::fmt::layer().event_format(LoggerFormatter).with_writer(writer);
 

@@ -161,21 +161,18 @@ impl AnalysisHost {
         self.db.update_lru_capacity(lru_capacity);
     }
 
-    /// Returns a snapshot of the current state, which you can query for
-    /// semantic information.
+    /// Returns a snapshot of the current state,
+    /// which you can query for semantic
+    /// information.
+    #[tracing::instrument]
     pub fn analysis(&self) -> Analysis {
 
-        let mut result = Analysis {
+        tracing::debug!("creating Analysis");
+
+        Analysis {
             db:                  self.db.snapshot(), 
             klebs_fix_baby_rust: Arc::new(Mutex::new(None)) 
-        };
-
-        if let Ok(plugin_path) = std::env::var("KLEBS_FIX_BABY_RUST_PLUGIN_PATH") {
-
-            result.load_klebs_fix_baby_rust_plugin(&plugin_path);
         }
-
-        result
     }
 
     /// Applies changes to the current state of the world. If there are
@@ -227,11 +224,20 @@ impl LoadKlebsFixBabyRustDynamicPlugin for Analysis {
 
     fn load_klebs_fix_baby_rust_plugin(&self, path: &str) {
 
-        let (_lib, plugin) 
-        = dynamically_load_klebs_fix_baby_rust_plugin(path);
+        match dynamically_load_klebs_fix_baby_rust_plugin(path) {
+            Ok((_lib, plugin)) => {
 
-        if let Ok(mut guard) = self.klebs_fix_baby_rust.lock() {
-            *guard = Some(plugin);
+                if let Ok(mut guard) = self.klebs_fix_baby_rust.lock() {
+
+                    *guard = Some(plugin);
+
+                    tracing::debug!("set dynamic library!");
+                }
+            },
+            Err(e) => {
+
+                tracing::error!("error setting dynamic library! {}", e);
+            }
         }
     }
 }
@@ -390,6 +396,8 @@ impl Analysis {
 
         if let Ok(plugin_path) = std::env::var("KLEBS_FIX_BABY_RUST_PLUGIN_PATH") {
             self.load_klebs_fix_baby_rust_plugin(plugin_path.as_str());
+        } else {
+            tracing::debug!("klebs plugin path not set!");
         }
 
         self.with_db(|db| {

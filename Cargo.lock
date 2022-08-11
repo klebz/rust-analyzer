@@ -228,6 +228,7 @@ dependencies = [
  "libloading",
  "syntax",
  "text-edit",
+ "tracing",
 ]
 
 [[package]]

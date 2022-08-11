@@ -46,18 +46,23 @@ use crate::{
 // `env UPDATE_EXPECT=1 cargo test -p hir_ty` to update the snapshots.
 
 fn setup_tracing() -> Option<tracing::subscriber::DefaultGuard> {
+
     static ENABLE: OnceBool = OnceBool::new();
+
     if !ENABLE.get_or_init(|| env::var("CHALK_DEBUG").is_ok()) {
         return None;
     }
 
     let filter = EnvFilter::from_env("CHALK_DEBUG");
+
     let layer = HierarchicalLayer::default()
         .with_indent_lines(true)
         .with_ansi(false)
         .with_indent_amount(2)
         .with_writer(std::io::stderr);
+
     let subscriber = Registry::default().with(filter).with(layer);
+
     Some(tracing::subscriber::set_default(subscriber))
 }
 
