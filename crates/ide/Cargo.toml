@@ -10,8 +10,9 @@ rust-version = "1.57"
 doctest = false
 
 [dependencies]
-libloading     = "*"
+#libloading     = "*"
 derivative     = "*"
+checksums      = "*"
 hotlib         = { git  = "https://github.com/klebz/hotlib", version = "*" }
 chomper-plugin = { path = "../../../chomper-plugin",         version = "*" }
 

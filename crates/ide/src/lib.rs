@@ -45,6 +45,7 @@ mod matching_brace;
 mod moniker;
 mod move_item;
 mod parent_module;
+mod klebs_plugin_interface; use klebs_plugin_interface::*;
 mod references;
 mod rename;
 mod runnables;
@@ -59,13 +60,11 @@ mod view_hir;
 mod view_item_tree;
 mod shuffle_crate_graph;
 
-use std::sync::{Arc,Mutex};
-use std::path::PathBuf;
-
-use derivative::*;
-
 use cfg::CfgOptions;
 use chomper_plugin::*;
+
+use std::sync::{Arc,Mutex};
+
 
 use ide_db::{
     base_db::{
@@ -151,13 +150,18 @@ impl<T> RangeInfo<T> {
 /// world.
 #[derive(Debug)]
 pub struct AnalysisHost {
-    db: RootDatabase,
+    db:    RootDatabase,
+    klebs: Arc<Mutex<Option<KlebsPluginInterface>>>,
 }
 
 impl AnalysisHost {
 
     pub fn new(lru_capacity: Option<usize>) -> AnalysisHost {
-        AnalysisHost { db: RootDatabase::new(lru_capacity) }
+
+        AnalysisHost { 
+            db:    RootDatabase::new(lru_capacity),
+            klebs: Arc::new(Mutex::new(None)),
+        }
     }
 
     pub fn update_lru_capacity(&mut self, lru_capacity: Option<usize>) {
@@ -171,7 +175,7 @@ impl AnalysisHost {
 
         Analysis {
             db:    self.db.snapshot(), 
-            klebs: Arc::new(Mutex::new(None)),
+            klebs: self.klebs.clone(),
         }
     }
 
@@ -185,12 +189,15 @@ impl AnalysisHost {
     pub fn per_query_memory_usage(&mut self) -> Vec<(String, profile::Bytes)> {
         self.db.per_query_memory_usage()
     }
+
     pub fn request_cancellation(&mut self) {
         self.db.request_cancellation();
     }
+
     pub fn raw_database(&self) -> &RootDatabase {
         &self.db
     }
+
     pub fn raw_database_mut(&mut self) -> &mut RootDatabase {
         &mut self.db
     }
@@ -214,160 +221,10 @@ impl Default for AnalysisHost {
 /// `AnalysisHost::apply_change` method, all
 /// existing `Analysis` are canceled (most method
 /// return `Err(Canceled)`).
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct Analysis {
     db:    salsa::Snapshot<RootDatabase>,
-
-    #[derivative(Debug="ignore")]
     klebs: Arc<Mutex<Option<KlebsPluginInterface>>>,
-}
-
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub struct KlebsPluginInterface {
-
-    #[derivative(Debug="ignore")]
-    watch:      hotlib::Watch,
-
-    #[derivative(Debug="ignore")]
-    lib:        Arc<Mutex<hotlib::TempLibrary>>,
-
-    #[derivative(Debug="ignore")]
-    pub plugin: Arc<Mutex<Box<dyn KlebsFixBabyRustPlugin>>>,
-    //klebs_fix_baby_rust: Arc<Mutex<Option<(libloading::Library, Box<dyn KlebsFixBabyRustPlugin>)>>>,
-}
-
-#[derive(Debug)]
-pub enum CreatePluginError {
-    EnvNotSet,
-    NoEntryPoint {
-        error: libloading::Error,
-    },
-    HotlibWatchFailedOnPath {
-        path:  PathBuf,
-        error: hotlib::WatchError,
-    },
-    CannotLoadLibrary {
-        error: hotlib::LoadError,
-    },
-}
-
-impl KlebsPluginInterface {
-
-    pub fn new_from_env() -> Result<Self, CreatePluginError> {
-
-        match Self::try_get_plugin_path() {
-            Some(path) => {
-                Self::new_from_path(path)
-            },
-            None => {
-                Err(CreatePluginError::EnvNotSet)
-            }
-        }
-    }
-
-    /// The given `Path` should point to the
-    /// `Cargo.toml` of the package used to build
-    /// the library.
-    #[tracing::instrument]
-    pub fn new_from_path(p: PathBuf) -> Result<Self, CreatePluginError> {
-
-        let watch = hotlib::watch(p.as_path()).map_err(|e| {
-            CreatePluginError::HotlibWatchFailedOnPath {
-                path:  p.to_path_buf(),
-                error: e,
-            }
-        })?;
-
-        let lib    = Self::build_library_and_load(&watch)?;
-        let plugin = Self::create_plugin_from_library_entrypoint(&lib)?;
-
-        Ok(
-            Self {
-                watch,
-                lib:    Arc::new(Mutex::new(lib)),
-                plugin: Arc::new(Mutex::new(plugin)),
-            }
-        )
-    }
-
-    #[tracing::instrument]
-    pub fn maybe_reload_plugin(&mut self) {
-        match self.reload_plugin() {
-            Ok(_) => {},
-            Err(e) => {
-                tracing::error!("reload plugin failure! error: {:?}", e);
-            }
-        }
-    }
-}
-
-//--------------------------------[ keep private ]
-impl KlebsPluginInterface {
-
-    #[tracing::instrument]
-    fn reload_plugin(&mut self) -> Result<(), CreatePluginError> {
-
-        let lib    = Self::build_library_and_load(&self.watch)?;
-        let plugin = Self::create_plugin_from_library_entrypoint(&lib)?;
-
-        if let Ok(guard) = self.lib.lock() {
-            *guard = lib;
-        }
-
-        if let Ok(guard) = self.plugin.lock() {
-            *guard = plugin;
-        }
-
-        Ok(())
-    }
-
-    fn build_library_and_load(watch: &hotlib::Watch) -> Result<hotlib::TempLibrary,CreatePluginError> {
-
-        watch.package().build().and_then(|pkg| pkg.load()?).map_err(|e| {
-            CreatePluginError::CannotLoadLibrary {
-                error: e,
-            }
-        })
-    }
-
-    fn get_entrypoint<'a>(lib: &'a hotlib::TempLibrary) -> Result<libloading::Symbol<'a, CreateKlebsFixBabyRustPlugin>, CreatePluginError> {
-
-        let name = Self::default_entrypoint_symbol_name();
-
-        unsafe {
-            lib.lib().get(name).map_err(|e| {
-                CreatePluginError::NoEntryPoint { error: e }
-            })
-        }
-    }
-
-    fn create_plugin_from_library_entrypoint(lib: &hotlib::TempLibrary) -> Result<Box<dyn KlebsFixBabyRustPlugin>,CreatePluginError> {
-
-        Self::get_entrypoint(lib).and_then(|entrypoint| {
-
-            let plugin = unsafe { Box::from_raw(entrypoint()) };
-
-            Ok(plugin)
-        })
-    }
-
-    //---------------------------------------
-    fn default_entrypoint_symbol_name() -> &'static [u8] {
-        b"create_klebs_fix_baby_rust_plugin"
-    }
-
-    fn default_plugin_path_env_var() -> &'static str {
-        "KLEBS_PLUGIN_PATH_TO_CARGO_TOML"
-    }
-
-    fn try_get_plugin_path() -> Option<PathBuf> {
-        match std::env::var(Self::default_plugin_path_env_var()) {
-            Some(p) => PathBuf::from(p),
-            Err(e)  => None,
-        }
-    }
 }
 
 // As a general design guideline, `Analysis` API
@@ -518,53 +375,126 @@ impl Analysis {
         })
     }
 
+    #[tracing::instrument]
+    fn maybe_create_klebs_plugin() -> Option<KlebsPluginInterface> {
+
+        // if we don't have a plugin, try to
+        // load it
+        match KlebsPluginInterface::new() {
+            Ok(just_created) => {
+
+                tracing::debug!("loading plugin");
+
+                Some(just_created)
+            },
+
+            Err(e) => {
+
+                tracing::debug!("ERROR: could not load plugin smh: {:?}", e);
+
+                None
+            }
+        }
+    }
+
+    #[tracing::instrument]
+    fn maybe_reload_klebs(&self) {
+        match self.klebs.lock() {
+            Ok(mut guard) => {
+                match *guard {
+                    Some(ref mut interface) => {
+                        // this will probably
+                        // happen the second+ time
+                        // klebs_fix_baby_rust is
+                        // called with the LSP
+                        interface.maybe_reload_plugin();
+                    },
+                    None => {
+                        // this will probably
+                        // happen the first time
+                        // klebs_fix_baby_rust is
+                        // called with the LSP
+                        tracing::debug!("no klebs exists -- creating from scratch");
+                        *guard = Self::maybe_create_klebs_plugin();
+                    }
+                }
+            },
+            Err(e) => {
+                tracing::debug!("ERROR: klebs mutex poisoned for somewhy: {:?}", e);
+            }
+        }
+    }
+
+    #[tracing::instrument]
     pub fn klebs_fix_baby_rust(&self, 
         config: &KlebsFixBabyRustConfig, 
         frange: FileRange) -> Cancellable<TextEdit> {
 
-        if let Some(klebs) = self.klebs {
+        tracing::debug!("klebs_fix_baby_rust");
 
-            klebs.maybe_reload_plugin();
+        self.maybe_reload_klebs();
 
-        } else {
-
-            // if we don't have a plugin, try to
-            // load it
-            *self.klebs.lock() = KlebsPluginInterface::new_from_env().ok()
-        }
-
-        // if we still don't have a plugin, we got
-        // an error.  otherwise, use the plugin
-        if let Ok(klebs) = self.klebs.lock() {
-
-            if let Some(guard) = klebs {
-
-                self.with_db(|db| {
-
-                    if let Ok(plugin) = guard.plugin.lock() {
-
-                        let parse = db.parse(frange.file_id);
-
-                        plugin.klebs_fix_baby_rust(
-                            config,
-                            &parse.tree(),
-                            frange.range
-                        )
-
-                    } else {
-
-                        Cancelled::catch(|| -> TextEdit {
-                            TextEdit::builder().finish()
-                        })
-                    }
+        macro_rules! cancel { 
+            () => {
+                Cancelled::catch(|| -> TextEdit {
+                    TextEdit::builder().finish()
                 })
             }
+        }
 
-        } else {
+        match self.klebs.lock() {
+            Ok(mut guard) => {
 
-            Cancelled::catch(|| -> TextEdit {
-                TextEdit::builder().finish()
-            })
+                // if we still don't have a plugin, we got
+                // an error.  otherwise, use the plugin
+                match *guard {
+                    Some(ref mut interface) => {
+
+                        tracing::debug!("found plugin interface, will use! {:?}", interface);
+
+                        self.with_db(|db| {
+
+                            match interface.plugin() {
+                                Ok(plugin) => {
+
+                                    tracing::debug!("successfully locked plugin interface! {:?}", plugin);
+
+                                    let parse = db.parse(frange.file_id);
+
+                                    let res = plugin.klebs_fix_baby_rust(
+                                        config,
+                                        &parse.tree(),
+                                        frange.range
+                                    );
+
+                                    tracing::debug!("finished calling into plugin!");
+
+                                    res
+
+                                },
+                                Err(e) => {
+
+                                    tracing::debug!("could not successfully lock plugin interface! {:?}", e);
+
+                                    TextEdit::builder().finish()
+                                }
+                            }
+                        })
+                    },
+                    None => {
+
+                        tracing::debug!("we still don't have a plugin even after attempting to load it! error! cancelling LSP message");
+
+                        cancel![]
+                    }
+                }
+            },
+            Err(e) => {
+
+                tracing::debug!("self.klebs.lock() failed with error: {:?}", e);
+
+                cancel![]
+            }
         }
     }
 
