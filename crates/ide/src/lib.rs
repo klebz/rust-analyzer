@@ -455,22 +455,30 @@ impl Analysis {
                         self.with_db(|db| {
 
                             match interface.plugin() {
-                                Ok(plugin) => {
+                                Ok(ref mut plugin) => {
 
                                     tracing::debug!("successfully locked plugin interface! {:?}", plugin);
 
                                     let parse = db.parse(frange.file_id);
 
-                                    let res = plugin.klebs_fix_baby_rust(
-                                        config,
-                                        &parse.tree(),
-                                        frange.range
-                                    );
+                                    if let Some(ref mut plugin) = **plugin {
 
-                                    tracing::debug!("finished calling into plugin!");
+                                        let res = plugin.klebs_fix_baby_rust(
+                                            config,
+                                            &parse.tree(),
+                                            frange.range
+                                        );
 
-                                    res
+                                        tracing::debug!("finished calling into plugin!");
 
+                                        res
+
+                                    } else {
+
+                                        tracing::debug!("plugin is None!");
+
+                                        TextEdit::builder().finish()
+                                    }
                                 },
                                 Err(e) => {
 

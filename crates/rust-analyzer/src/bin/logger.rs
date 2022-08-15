@@ -77,7 +77,11 @@ impl Logger {
         };
 
         let ra_fmt_layer =
-            tracing_subscriber::fmt::layer().event_format(LoggerFormatter).with_writer(writer);
+        tracing_subscriber::fmt::layer()
+            //.event_format(LoggerFormatter)
+            .json()
+            .flatten_event(true)
+            .with_writer(writer);
 
         match chalk_level_dir {
             Some(val) => {

@@ -11,10 +11,13 @@ doctest = false
 
 [dependencies]
 #libloading     = "*"
-derivative     = "*"
-checksums      = "*"
-hotlib         = { git  = "https://github.com/klebz/hotlib", version = "*" }
-chomper-plugin = { path = "../../../chomper-plugin",         version = "*" }
+derivative      = "*"
+checksums       = "*"
+valuable       = "*"
+valuable-derive = "*"
+hotlib          = { git  = "https://github.com/klebz/hotlib",        version = "*" }
+dynamic_reload  = { git  = "https://github.com/klebz/dynamic_reload", version = "*" }
+chomper-plugin  = { path = "../../../chomper-plugin",                version = "*" }
 
 cov-mark = "2.0.0-pre.1"
 crossbeam-channel = "0.5.5"
