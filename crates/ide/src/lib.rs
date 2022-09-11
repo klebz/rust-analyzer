@@ -464,6 +464,7 @@ impl Analysis {
                                     if let Some(ref mut plugin) = **plugin {
 
                                         let res = plugin.klebs_fix_baby_rust(
+                                            db.snapshot(),
                                             config,
                                             &parse.tree(),
                                             frange.range

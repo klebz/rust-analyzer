@@ -19,12 +19,17 @@ pub enum CreatePluginError {
         error: dynamic_reload::Error,
     },
     BadFileString,
+
+    #[allow(dead_code)]
     MutexError {
         //describes which mutex was poisoned
         tag:  &'static str,
     },
+
     NoDylibParentDir,
     EnvNotSet,
+
+    #[allow(dead_code)]
     NoChecksum,
 }
 

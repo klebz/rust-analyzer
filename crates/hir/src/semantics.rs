@@ -89,6 +89,7 @@ pub struct TypeInfo {
 }
 
 impl TypeInfo {
+
     pub fn original(self) -> Type {
         self.original
     }
