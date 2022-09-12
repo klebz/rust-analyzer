@@ -3,9 +3,26 @@ members = ["xtask/", "lib/*", "crates/*"]
 exclude = ["crates/proc-macro-test/imp"]
 
 [profile.dev]
+
+#changed this
+split-debuginfo = "packed"
+
+#default settings
+opt-level = 0
+
 # Disabling debug info speeds up builds a bunch,
 # and we don't rely on it for debugging that much.
-debug = 0
+#
+# however I (klebs) turned it back on for my own
+# amusement muahahah
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+rpath = false
 
 [profile.dev.package]
 # These speed up local tests.

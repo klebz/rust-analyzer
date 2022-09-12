@@ -10,15 +10,20 @@ rust-version = "1.57"
 doctest = false
 
 [dependencies]
+#--------------the following are added by *klebs*-------------
+rowan           = "*"
+hir-def         = { path = "../hir-def", version = "0.0.0" }
+hir-ty          = { path = "../hir-ty",  version = "0.0.0" }
 #libloading     = "*"
 derivative      = "*"
 checksums       = "*"
-valuable       = "*"
+valuable        = "*"
 valuable-derive = "*"
 hotlib          = { git  = "https://github.com/klebz/hotlib",        version = "*" }
 dynamic_reload  = { git  = "https://github.com/klebz/dynamic_reload", version = "*" }
 chomper-plugin  = { path = "../../../chomper-plugin",                version = "*" }
 
+#the following are *not* added by *klebs*
 cov-mark = "2.0.0-pre.1"
 crossbeam-channel = "0.5.5"
 either = "1.7.0"

@@ -132,7 +132,7 @@ pub type LocalModuleId = Idx<nameres::ModuleData>;
 #[derive(Debug)]
 pub struct ItemLoc<N: ItemTreeNode> {
     pub container: ModuleId,
-    pub id: ItemTreeId<N>,
+    pub id:        ItemTreeId<N>,
 }
 
 impl<N: ItemTreeNode> Clone for ItemLoc<N> {

@@ -459,26 +459,129 @@ impl Analysis {
 
                                     tracing::debug!("successfully locked plugin interface! {:?}", plugin);
 
-                                    let parse = db.parse(frange.file_id);
+                                    /*
+                                    let semantics = Semantics::new(db);
 
-                                    if let Some(ref mut plugin) = **plugin {
+                                    let file: SourceFile = semantics.parse(frange.file_id);
 
-                                        let res = plugin.klebs_fix_baby_rust(
-                                            db.snapshot(),
-                                            config,
-                                            &parse.tree(),
-                                            frange.range
-                                        );
+                                    use syntax::{ast,AstNode};
+                                    use rowan::NodeOrToken;
+                                    use hir_def::{DefWithBodyId,FunctionId};
+                                    use hir_ty::db::HirDatabase;
 
-                                        tracing::debug!("finished calling into plugin!");
+                                    let elem = file.syntax().covering_element(frange.range.clone());
 
-                                        res
+                                    tracing::info!("got a elem");
+
+                                    let maybe_type_inference = match elem {
+
+                                        NodeOrToken::Node(node) => {
+
+                                            match node.ancestors().find_map(ast::Fn::cast) {
+                                                Some(func_node) => {
+
+                                                    tracing::info!("about to run the thing which breaks");
+                                                    match semantics.to_def(&func_node) {
+                                                        Some(def) => {
+
+                                                            tracing::info!("success! received: def: {:?}", def);
+
+                                                            let id               = FunctionId::from(def);
+                                                            let dbid             = DefWithBodyId::FunctionId(id);
+                                                            let inference_result = db.infer_query(dbid);
+
+                                                            tracing::info!("inference_result: {:#?}", inference_result);
+
+                                                            Some(inference_result)
+                                                        }
+
+                                                        None => {
+                                                            None
+                                                        }
+                                                    }
+                                                }
+                                                None => None
+                                            }
+                                        }
+
+                                        NodeOrToken::Token(token) => { 
+
+                                            match token.parent_ancestors().find_map(ast::Fn::cast) {
+                                                Some(func_node) => {
+
+                                                    tracing::info!("about to run the thing which breaks");
+                                                    match semantics.to_def(&func_node) {
+                                                        Some(def) => {
+
+                                                            tracing::info!("success! received: def: {:?}", def);
+
+                                                            let id               = FunctionId::from(def);
+                                                            let dbid             = DefWithBodyId::FunctionId(id);
+                                                            let inference_result = db.infer_query(dbid);
+
+                                                            tracing::info!("inference_result: {:#?}", inference_result);
+
+                                                            Some(inference_result)
+                                                        }
+
+                                                        None => {
+                                                            None
+                                                        }
+                                                    }
+                                                }
+                                                None => None
+                                            }
+                                        }
+                                    };
+
+                                    if maybe_type_inference.is_none() {
+                                        tracing::warn!("could not complete type inference!");
+                                    }
+
+                                    let type_inference = maybe_type_inference.unwrap();
+
+                                    let world = KlebsPluginEnv { 
+                                        type_inference: type_inference.clone()
+                                    };
+                                    */
+
+                                    /*
+                                    tracing::info!("about to fight the dragon on the host side");
+
+                                    chomper_plugin::my_breaks_on_plugin_side_works_on_host_side(&db,frange);
+
+                                    tracing::info!("got past the dragon on the host side");
+                                    */
+
+                                    if let Some(type_inference) = run_type_inference(db,frange.clone()) {
+
+                                        if let Some(ref mut plugin) = **plugin {
+
+                                            tracing::debug!("about to call into plugin!");
+
+                                            let res = plugin.klebs_fix_baby_rust(
+                                                &db,
+                                                type_inference,
+                                                frange
+                                            );
+
+                                            tracing::debug!("finished calling into plugin!");
+
+                                            return res;
+
+                                        } else {
+
+                                            tracing::error!("plugin is None!");
+
+                                            TextEdit::builder().finish()
+                                        }
 
                                     } else {
 
-                                        tracing::debug!("plugin is None!");
+                                        tracing::error!("could not run type inference!");
 
                                         TextEdit::builder().finish()
+
                                     }
                                 },
                                 Err(e) => {

@@ -342,6 +342,9 @@ name = "chomper-plugin"
 version = "0.1.0"
 dependencies = [
  "base-db",
+ "hir",
+ "hir-def",
+ "hir-ty",
  "ide-db",
  "libloading 0.7.3",
  "syntax",
@@ -994,6 +997,8 @@ dependencies = [
  "either",
  "expect-test",
  "hir",
+ "hir-def",
+ "hir-ty",
  "hotlib",
  "ide-assists",
  "ide-completion",
@@ -1005,6 +1010,7 @@ dependencies = [
  "profile",
  "pulldown-cmark",
  "pulldown-cmark-to-cmark",
+ "rowan",
  "stdx",
  "syntax",
  "test-utils",
